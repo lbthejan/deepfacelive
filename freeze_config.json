@@ -1,0 +1,20 @@
+{
+  "confidence_threshold": 0.75,
+  "max_freeze_duration": 5.0,
+  "frame_buffer_size": 3,
+  "enable_stats_overlay": true,
+  "enable_performance_monitoring": true,
+  "ui_settings": {
+    "show_threshold_slider": true,
+    "show_stats_button": true,
+    "show_debug_button": true,
+    "overlay_position": "top_left",
+    "overlay_opacity": 0.8
+  },
+  "advanced_settings": {
+    "hysteresis_offset": 0.05,
+    "confidence_smoothing": true,
+    "auto_threshold_adjustment": false,
+    "performance_optimization": true
+  }
+}

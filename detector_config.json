@@ -1,0 +1,14 @@
+{
+  "detector_type": "insightface",
+  "confidence_extraction": {
+    "method": "auto_detect",
+    "fallback_confidence": 0.5,
+    "minimum_confidence": 0.1,
+    "maximum_confidence": 1.0
+  },
+  "detection_settings": {
+    "stability_window": 5,
+    "variance_threshold": 0.2,
+    "detection_timeout": 2.0
+  }
+}
