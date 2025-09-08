@@ -67,8 +67,8 @@ def main():
                 print("🚀 Integrating freeze-frame functionality...")
 
                 # Import freeze-frame components
-                from deepfacelive_integration import DeepFaceLiveFreezeProcessor
-                from freeze_frame_manager import FreezeFrameManager
+                from .freeze_frame_modules import DeepFaceLiveFreezeProcessor
+                from .freeze_frame_modules import FreezeFrameManager
 
                 # Create the enhanced app class
                 class EnhancedDeepFaceLiveApp(DeepFaceLiveApp):
@@ -225,8 +225,8 @@ def main():
             print("🧪 Testing freeze-frame functionality...")
 
             try:
-                from freeze_frame_manager import FreezeFrameManager
-                from performance_monitor import PerformanceMonitor
+                from .freeze_frame_modules import FreezeFrameManager
+                from .freeze_frame_modules import PerformanceMonitor
                 import cv2
                 import numpy as np
                 import time
@@ -306,7 +306,7 @@ def main():
             print("⚙️  Configuring freeze-frame settings...")
 
             try:
-                from freeze_frame_manager import FreezeFrameManager
+                from .freeze_frame_modules import FreezeFrameManager
                 import json
 
                 config_path = Path("freeze_config.json")
