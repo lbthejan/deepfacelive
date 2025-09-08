@@ -6,39 +6,42 @@ from pathlib import Path
 from xlib import appargs as lib_appargs
 from xlib import os as lib_os
 
-# Freeze-frame functionality
 import sys
-from pathlib import Path
-
-sys.path.append(str(Path(__file__).parent / "freeze_frame_modules"))
 
 try:
-    from deepfacelive_app_patch import DeepFaceLiveAppPatch
+    from collections.abc import Iterable
+except ImportError:
+    from collections import Iterable
+import collections
 
-    FREEZE_FRAME_AVAILABLE = True
-    print("✓ Freeze-frame functionality loaded successfully")
-except ImportError as e:
-    print(f"Warning: Freeze-frame modules not found ({e}). Running without freeze-frame functionality.")
-    print("To enable freeze-frame: ensure all module files are in the 'freeze_frame_modules' directory")
-    FREEZE_FRAME_AVAILABLE = False
+collections.Iterable = Iterable
 
 
-# onnxruntime==1.8.0 requires CUDA_PATH_V11_2, but 1.8.1 don't
-# keep the code if they return that behaviour
-# if __name__ == '__main__':
-#     if platform.system() == 'Windows':
-#         if 'CUDA_PATH' not in os.environ:
-#             raise Exception('CUDA_PATH should be set to environ')
-#         # set environ for onnxruntime
-#         # os.environ['CUDA_PATH_V11_2'] = os.environ['CUDA_PATH']
+# Freeze-frame functionality setup
+def setup_freeze_frame():
+    """Setup freeze-frame functionality"""
+    current_dir = Path(__file__).parent
+    freeze_modules_path = current_dir / "freeze_frame_modules"
 
-# from modelhub.onnx import InsightFaceSwap
+    if freeze_modules_path.exists():
+        if str(freeze_modules_path) not in sys.path:
+            sys.path.insert(0, str(freeze_modules_path))
 
-# x = InsightFaceSwap(InsightFaceSwap.get_available_devices()[0])
+        try:
+            # Test import
+            from freeze_frame_manager import FreezeFrameManager
+            print("✓ Freeze-frame functionality enabled")
+            return True
+        except ImportError as e:
+            print(f"⚠️  Freeze-frame modules found but couldn't import: {e}")
+            return False
+    else:
+        print("ℹ️  No freeze-frame modules found (running original DeepFaceLive)")
+        return False
 
 
-# import code
-# code.interact(local=dict(globals(), **locals()))
+# Initialize freeze-frame
+FREEZE_FRAME_AVAILABLE = setup_freeze_frame()
 
 
 def main():
@@ -52,48 +55,120 @@ def main():
         userdata_path = Path(args.userdata_dir) if args.userdata_dir else Path.cwd()
         lib_appargs.set_arg_bool('NO_CUDA', args.no_cuda)
 
-        print('Running DeepFaceLive with freeze-frame functionality.')
+        print(
+            'Running DeepFaceLive with freeze-frame functionality.' if FREEZE_FRAME_AVAILABLE else 'Running original DeepFaceLive.')
+
+        # Import the DeepFaceLive app
         from apps.DeepFaceLive.DeepFaceLiveApp import DeepFaceLiveApp
 
-        # Apply freeze-frame patch if available
+        # Apply freeze-frame integration if available
         if FREEZE_FRAME_AVAILABLE:
             try:
-                print("Applying freeze-frame enhancements...")
-                PatchedApp = DeepFaceLiveAppPatch.patch_deepfacelive_app(DeepFaceLiveApp)
+                print("🚀 Integrating freeze-frame functionality...")
 
-                # Create and run the patched app
-                app_instance = PatchedApp(userdata_path=userdata_path)
+                # Import freeze-frame components
+                from deepfacelive_integration import DeepFaceLiveFreezeProcessor
+                from freeze_frame_manager import FreezeFrameManager
 
-                # Load freeze-frame configuration if available
-                freeze_config_path = userdata_path / "freeze_config.json"
-                if freeze_config_path.exists():
-                    print(f"Loading freeze-frame config from: {freeze_config_path}")
-                else:
-                    print("Using default freeze-frame configuration")
+                # Create the enhanced app class
+                class EnhancedDeepFaceLiveApp(DeepFaceLiveApp):
+                    def __init__(self, *args, **kwargs):
+                        super().__init__(*args, **kwargs)
 
-                print("✓ DeepFaceLive started with freeze-frame functionality")
-                print("  - Confidence-based frame freezing enabled")
-                print("  - Performance monitoring active")
-                print("  - Statistics available via UI controls")
+                        # Initialize freeze processor
+                        self.freeze_processor = DeepFaceLiveFreezeProcessor(userdata_path)
 
-                app_instance.run()
+                        # Set freeze threshold from args or environment
+                        threshold = getattr(args, 'freeze_threshold', None) or \
+                                    float(os.environ.get('FREEZE_THRESHOLD', '0.75'))
+                        self.freeze_processor.freeze_manager.update_threshold(threshold)
+
+                        # Configure overlay
+                        if getattr(args, 'no_freeze_overlay', False) or \
+                                os.environ.get('NO_FREEZE_OVERLAY'):
+                            self.freeze_processor.show_stats_overlay = False
+
+                        print(f"✓ Freeze-frame initialized (threshold: {threshold})")
+
+                    def on_app_start(self):
+                        """Called when app starts - setup freeze processor"""
+                        result = super().on_app_start()
+
+                        # Try to connect to face detector
+                        try:
+                            # Look for face detector in the app
+                            for backend in self._backends:
+                                if hasattr(backend, '__class__') and 'FaceDetector' in backend.__class__.__name__:
+                                    self.freeze_processor.initialize_face_detector(backend)
+                                    print("✓ Freeze processor connected to face detector")
+                                    break
+                        except Exception as e:
+                            print(f"⚠️  Could not connect freeze processor to detector: {e}")
+
+                        return result
+
+                    def _process_frame_freeze(self, frame, backend_dict):
+                        """Enhanced frame processing with freeze-frame logic"""
+
+                        # Check if we have necessary components
+                        face_swapper = backend_dict.get('face_swapper')
+                        face_merger = backend_dict.get('face_merger')
+
+                        if not face_swapper:
+                            return super()._process_frame(frame, backend_dict)
+
+                        try:
+                            # Use freeze processor if available and connected
+                            if (self.freeze_processor and
+                                    self.freeze_processor.face_detector_adapter):
+
+                                return self.freeze_processor.process_frame(
+                                    frame, face_swapper, None, face_merger
+                                )
+                            else:
+                                # Fallback to original processing
+                                return super()._process_frame(frame, backend_dict)
+
+                        except Exception as e:
+                            print(f"Freeze-frame processing error: {e}")
+                            # Fallback to original processing
+                            return super()._process_frame(frame, backend_dict)
+
+                    def _process_frame(self, frame, backend_dict):
+                        """Override frame processing to include freeze-frame"""
+                        if hasattr(self, 'freeze_processor') and self.freeze_processor:
+                            return self._process_frame_freeze(frame, backend_dict)
+                        else:
+                            return super()._process_frame(frame, backend_dict)
+
+                # Use the enhanced app
+                app_class = EnhancedDeepFaceLiveApp
+                print("✓ Enhanced DeepFaceLive app created")
 
             except Exception as e:
-                print(f"Error with freeze-frame functionality: {e}")
-                print("Falling back to original DeepFaceLive...")
-                DeepFaceLiveApp(userdata_path=userdata_path).run()
+                print(f"⚠️  Error setting up freeze-frame: {e}")
+                print("   Falling back to original DeepFaceLive")
+                app_class = DeepFaceLiveApp
         else:
-            print("Running original DeepFaceLive (freeze-frame not available)")
-            DeepFaceLiveApp(userdata_path=userdata_path).run()
+            app_class = DeepFaceLiveApp
+
+        # Create and run the app
+        app = app_class(userdata_path=userdata_path)
+        app.run()
 
     p = run_subparsers.add_parser('DeepFaceLive')
     p.add_argument('--userdata-dir', default=None, action=fixPathAction, help="Workspace directory.")
     p.add_argument('--no-cuda', action="store_true", default=False, help="Disable CUDA.")
-    p.add_argument('--freeze-threshold', type=float, default=None,
-                   help="Set freeze-frame confidence threshold (0.0-1.0)")
-    p.add_argument('--no-freeze-overlay', action="store_true", default=False,
-                   help="Disable freeze-frame statistics overlay")
-    p.add_argument('--freeze-config', default=None, help="Path to freeze-frame configuration file")
+
+    # Freeze-frame specific arguments
+    if FREEZE_FRAME_AVAILABLE:
+        p.add_argument('--freeze-threshold', type=float, default=None,
+                       help="Set freeze-frame confidence threshold (0.0-1.0, default: 0.75)")
+        p.add_argument('--no-freeze-overlay', action="store_true", default=False,
+                       help="Disable freeze-frame statistics overlay")
+        p.add_argument('--freeze-config', default=None,
+                       help="Path to freeze-frame configuration file")
+
     p.set_defaults(func=run_DeepFaceLive)
 
     dev_parser = subparsers.add_parser("dev")
@@ -140,146 +215,168 @@ def main():
     p.add_argument('--faceset-path', default=None, action=fixPathAction, help=".dfs path")
     p.set_defaults(func=train_FaceAligner)
 
-    # Freeze-frame specific commands
+    # Freeze-frame utility commands
     if FREEZE_FRAME_AVAILABLE:
         freeze_parser = subparsers.add_parser("freeze", help="Freeze-frame utilities.")
         freeze_subparsers = freeze_parser.add_subparsers()
 
         def test_freeze_frame(args):
-            """Test freeze-frame functionality"""
-            print("Testing freeze-frame functionality...")
+            """Test freeze-frame functionality with webcam"""
+            print("🧪 Testing freeze-frame functionality...")
+
             try:
-                from usage_examples import basic_webcam_test
-                basic_webcam_test()
-            except ImportError:
-                print("Usage examples not found. Running basic test...")
                 from freeze_frame_manager import FreezeFrameManager
+                from performance_monitor import PerformanceMonitor
                 import cv2
                 import numpy as np
+                import time
 
                 freeze_manager = FreezeFrameManager(confidence_threshold=args.threshold)
-                cap = cv2.VideoCapture(args.webcam)
+                performance_monitor = PerformanceMonitor()
 
-                print(f"Testing with webcam {args.webcam}, threshold {args.threshold}")
-                print("Press 'q' to quit")
+                cap = cv2.VideoCapture(args.webcam)
+                if not cap.isOpened():
+                    print(f"❌ Could not open webcam {args.webcam}")
+                    return
+
+                print(f"✓ Testing with webcam {args.webcam}, threshold {args.threshold}")
+                print("Controls: 'q' to quit, 's' for stats, '+'/'-' to adjust threshold")
 
                 while True:
                     ret, frame = cap.read()
                     if not ret:
                         break
 
-                    # Simulate confidence
-                    confidence = np.random.uniform(0.3, 0.9)
-                    output_frame, is_frozen = freeze_manager.process_frame(frame, confidence)
+                    # Simulate face detection confidence
+                    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                    brightness = np.mean(gray) / 255.0
+                    confidence = max(0.0, min(1.0, brightness + np.random.normal(0, 0.1)))
 
+                    start_time = time.time()
+                    output_frame, is_frozen = freeze_manager.process_frame(frame, confidence)
+                    process_time = time.time() - start_time
+
+                    performance_monitor.update(process_time, confidence, is_frozen)
+
+                    # Add status overlay
                     status = "FROZEN" if is_frozen else "LIVE"
                     color = (0, 0, 255) if is_frozen else (0, 255, 0)
-                    cv2.putText(output_frame, f"{status} - {confidence:.3f}",
+                    cv2.putText(output_frame, f"{status} - Conf: {confidence:.3f}",
                                 (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+                    cv2.putText(output_frame, f"Threshold: {args.threshold:.2f}",
+                                (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 
                     cv2.imshow("Freeze-Frame Test", output_frame)
 
-                    if cv2.waitKey(1) & 0xFF == ord('q'):
+                    key = cv2.waitKey(1) & 0xFF
+                    if key == ord('q'):
                         break
+                    elif key == ord('s'):
+                        stats = freeze_manager.get_stats()
+                        perf_stats = performance_monitor.get_rolling_stats()
+                        print(f"Stats - Freezes: {stats['freeze_count']}, "
+                              f"FPS: {perf_stats['fps']:.1f}, "
+                              f"Freeze Ratio: {perf_stats['freeze_ratio']:.1%}")
+                    elif key == ord('+') or key == ord('='):
+                        args.threshold = min(1.0, args.threshold + 0.05)
+                        freeze_manager.update_threshold(args.threshold)
+                        print(f"Threshold increased to: {args.threshold:.2f}")
+                    elif key == ord('-'):
+                        args.threshold = max(0.0, args.threshold - 0.05)
+                        freeze_manager.update_threshold(args.threshold)
+                        print(f"Threshold decreased to: {args.threshold:.2f}")
 
                 cap.release()
                 cv2.destroyAllWindows()
+
+                # Final stats
+                final_stats = freeze_manager.get_stats()
+                print(f"\n✅ Test completed - Total freezes: {final_stats['freeze_count']}")
+
+            except Exception as e:
+                print(f"❌ Test failed: {e}")
 
         p = freeze_subparsers.add_parser('test')
         p.add_argument('--webcam', type=int, default=0, help="Webcam index")
         p.add_argument('--threshold', type=float, default=0.75, help="Confidence threshold")
         p.set_defaults(func=test_freeze_frame)
 
-        def benchmark_freeze_frame(args):
-            """Benchmark freeze-frame performance"""
-            print("Running freeze-frame performance benchmark...")
-            try:
-                from cpu_optimization_config import benchmark_cpu_performance
-                benchmark_cpu_performance()
-            except ImportError:
-                print("CPU optimization not found. Running basic benchmark...")
-                from performance_monitor import PerformanceMonitor
-                import time
-                import numpy as np
-
-                monitor = PerformanceMonitor()
-                start_time = time.time()
-                frame_count = 0
-
-                while time.time() - start_time < args.duration:
-                    process_start = time.time()
-                    # Simulate frame processing
-                    dummy_frame = np.random.randint(0, 255, (480, 640, 3), dtype=np.uint8)
-                    time.sleep(0.01)  # Simulate processing time
-                    process_time = time.time() - process_start
-
-                    monitor.update(process_time, np.random.uniform(0.5, 0.9), False)
-                    frame_count += 1
-
-                stats = monitor.get_comprehensive_stats()
-                print(f"Processed {frame_count} frames in {args.duration} seconds")
-                print(f"Average FPS: {stats['current']['fps']:.1f}")
-
-        p = freeze_subparsers.add_parser('benchmark')
-        p.add_argument('--duration', type=int, default=30, help="Benchmark duration in seconds")
-        p.set_defaults(func=benchmark_freeze_frame)
-
         def config_freeze_frame(args):
             """Configure freeze-frame settings"""
-            print("Configuring freeze-frame settings...")
-            from freeze_frame_manager import FreezeFrameManager
+            print("⚙️  Configuring freeze-frame settings...")
 
-            freeze_manager = FreezeFrameManager()
+            try:
+                from freeze_frame_manager import FreezeFrameManager
+                import json
 
-            if args.threshold:
-                freeze_manager.update_threshold(args.threshold)
-                print(f"Threshold updated to: {args.threshold}")
+                config_path = Path("freeze_config.json")
 
-            if args.buffer_size:
-                freeze_manager.frame_buffer_size = args.buffer_size
-                freeze_manager.save_config()
-                print(f"Buffer size updated to: {args.buffer_size}")
+                if args.show_current:
+                    if config_path.exists():
+                        with open(config_path, 'r') as f:
+                            config = json.load(f)
+                        print("Current configuration:")
+                        for key, value in config.items():
+                            print(f"  {key}: {value}")
+                    else:
+                        print("No configuration file found")
+                    return
 
-            if args.show_current:
-                stats = freeze_manager.get_stats()
-                print(f"Current configuration:")
-                print(f"  Threshold: {stats['threshold']}")
-                print(f"  Buffer size: {freeze_manager.frame_buffer_size}")
+                # Load or create config
+                if config_path.exists():
+                    with open(config_path, 'r') as f:
+                        config = json.load(f)
+                else:
+                    config = {
+                        "confidence_threshold": 0.75,
+                        "max_freeze_duration": 5.0,
+                        "frame_buffer_size": 3,
+                        "enable_stats_overlay": True
+                    }
+
+                # Update config with provided arguments
+                if args.threshold is not None:
+                    config["confidence_threshold"] = args.threshold
+                    print(f"✓ Threshold set to: {args.threshold}")
+
+                if args.buffer_size is not None:
+                    config["frame_buffer_size"] = args.buffer_size
+                    print(f"✓ Buffer size set to: {args.buffer_size}")
+
+                if args.max_freeze is not None:
+                    config["max_freeze_duration"] = args.max_freeze
+                    print(f"✓ Max freeze duration set to: {args.max_freeze}s")
+
+                # Save config
+                with open(config_path, 'w') as f:
+                    json.dump(config, f, indent=2)
+
+                print(f"✓ Configuration saved to: {config_path}")
+
+            except Exception as e:
+                print(f"❌ Configuration failed: {e}")
 
         p = freeze_subparsers.add_parser('config')
         p.add_argument('--threshold', type=float, help="Set confidence threshold")
         p.add_argument('--buffer-size', type=int, help="Set frame buffer size")
+        p.add_argument('--max-freeze', type=float, help="Set maximum freeze duration")
         p.add_argument('--show-current', action='store_true', help="Show current configuration")
         p.set_defaults(func=config_freeze_frame)
 
     def bad_args(arguments):
         parser.print_help()
         if FREEZE_FRAME_AVAILABLE:
-            print("\nFreeze-frame commands available:")
+            print("\n🎭 Freeze-frame commands available:")
             print("  python main.py freeze test          - Test freeze-frame functionality")
-            print("  python main.py freeze benchmark     - Run performance benchmark")
             print("  python main.py freeze config        - Configure freeze-frame settings")
+            print("\n🚀 Enhanced DeepFaceLive usage:")
+            print("  python main.py run DeepFaceLive --freeze-threshold 0.8")
+            print("  python main.py run DeepFaceLive --no-freeze-overlay")
         exit(0)
 
     parser.set_defaults(func=bad_args)
 
     args = parser.parse_args()
-
-    # Handle freeze-frame specific arguments for DeepFaceLive command
-    if hasattr(args, 'freeze_threshold') and args.freeze_threshold is not None:
-        if FREEZE_FRAME_AVAILABLE:
-            # Store freeze-frame arguments for the app to use
-            os.environ['FREEZE_THRESHOLD'] = str(args.freeze_threshold)
-            print(f"Freeze threshold set to: {args.freeze_threshold}")
-
-    if hasattr(args, 'no_freeze_overlay') and args.no_freeze_overlay:
-        os.environ['NO_FREEZE_OVERLAY'] = '1'
-        print("Freeze-frame overlay disabled")
-
-    if hasattr(args, 'freeze_config') and args.freeze_config:
-        os.environ['FREEZE_CONFIG_PATH'] = args.freeze_config
-        print(f"Using freeze config: {args.freeze_config}")
-
     args.func(args)
 
 
@@ -290,6 +387,3 @@ class fixPathAction(argparse.Action):
 
 if __name__ == '__main__':
     main()
-
-# import code
-# code.interact(local=dict(globals(), **locals()))

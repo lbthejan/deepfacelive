@@ -9,13 +9,6 @@
   "ui_settings": {
     "show_threshold_slider": true,
     "show_stats_button": true,
-    "show_debug_button": true,
-    "show_reset_button": true
-  },
-  "performance_settings": {
-    "monitor_fps": true,
-    "monitor_confidence": true,
-    "export_stats": false,
-    "log_performance": false
+    "show_debug_button": true
   }
 }

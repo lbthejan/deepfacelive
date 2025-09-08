@@ -12,15 +12,13 @@ try:
     from .face_detector_wrapper import FaceDetectorWrapper, DeepFaceLiveDetectorAdapter
     from .performance_monitor import PerformanceMonitor
     from .deepfacelive_integration import DeepFaceLiveFreezeProcessor
-    from .deepfacelive_app_patch import DeepFaceLiveAppPatch
 
     __all__ = [
         'FreezeFrameManager',
         'FaceDetectorWrapper',
         'DeepFaceLiveDetectorAdapter',
         'PerformanceMonitor',
-        'DeepFaceLiveFreezeProcessor',
-        'DeepFaceLiveAppPatch'
+        'DeepFaceLiveFreezeProcessor'
     ]
 
     print("✓ Freeze-frame modules loaded successfully")
