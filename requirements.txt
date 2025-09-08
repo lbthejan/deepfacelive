@@ -1,0 +1,38 @@
+# Enhanced DeepFaceLive Requirements with Freeze-Frame Support
+# Core DeepFaceLive dependencies
+opencv-python>=4.5.0
+numpy>=1.19.0
+Pillow>=8.0.0
+tqdm>=4.60.0
+
+# Deep Learning frameworks
+torch>=1.9.0
+torchvision>=0.10.0
+onnxruntime>=1.8.0
+
+# Face processing libraries
+insightface>=0.6.2
+mediapipe>=0.8.0
+
+# GUI and visualization
+PyQt5>=5.15.0
+matplotlib>=3.3.0
+
+# Performance and optimization
+numba>=0.53.0
+scipy>=1.7.0
+
+# Freeze-frame specific dependencies
+psutil>=5.8.0          # System monitoring
+threading-timer>=0.1.0 # Thread management
+json-logging>=1.3.0    # Enhanced logging
+
+# Optional but recommended
+ffmpeg-python>=0.2.0   # Video processing
+colorama>=0.4.4        # Colored terminal output
+rich>=10.0.0           # Enhanced console output
+
+# Development and testing (optional)
+pytest>=6.0.0
+flake8>=3.9.0
+black>=21.0.0
