@@ -1,7 +1,5 @@
 {
   "confidence_threshold": 0.75,
   "max_freeze_duration": 5.0,
-  "frame_buffer_size": 3,
-  "enable_stats_overlay": true,
-  "enable_performance_monitoring": true
+  "frame_buffer_size": 3
 }

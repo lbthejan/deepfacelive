@@ -28,7 +28,7 @@ def setup_freeze_frame():
             sys.path.insert(0, str(freeze_modules_path))
 
         try:
-            # Test import
+            # Test import with correct module path
             from freeze_frame_manager import FreezeFrameManager
             print("✓ Freeze-frame functionality enabled")
             return True
@@ -66,56 +66,85 @@ def main():
             try:
                 print("🚀 Integrating freeze-frame functionality...")
 
-                # Import freeze-frame components
-                from .freeze_frame_modules import DeepFaceLiveFreezeProcessor
-                from .freeze_frame_modules import FreezeFrameManager
+                # FIXED: Correct imports without relative paths
+                from freeze_frame_modules.deepfacelive_integration import DeepFaceLiveFreezeProcessor
+                from freeze_frame_modules.freeze_frame_manager import FreezeFrameManager
 
                 # Create the enhanced app class
                 class EnhancedDeepFaceLiveApp(DeepFaceLiveApp):
                     def __init__(self, *args, **kwargs):
                         super().__init__(*args, **kwargs)
 
-                        # Initialize freeze processor
-                        self.freeze_processor = DeepFaceLiveFreezeProcessor(userdata_path)
+                        # Initialize freeze processor with error handling
+                        try:
+                            self.freeze_processor = DeepFaceLiveFreezeProcessor(userdata_path)
 
-                        # Set freeze threshold from args or environment
-                        threshold = getattr(args, 'freeze_threshold', None) or \
-                                    float(os.environ.get('FREEZE_THRESHOLD', '0.75'))
-                        self.freeze_processor.freeze_manager.update_threshold(threshold)
+                            # Set freeze threshold from args or environment
+                            threshold = getattr(args, 'freeze_threshold', None) or \
+                                        float(os.environ.get('FREEZE_THRESHOLD', '0.75'))
+                            self.freeze_processor.freeze_manager.update_threshold(threshold)
 
-                        # Configure overlay
-                        if getattr(args, 'no_freeze_overlay', False) or \
-                                os.environ.get('NO_FREEZE_OVERLAY'):
-                            self.freeze_processor.show_stats_overlay = False
+                            # Configure overlay
+                            if getattr(args, 'no_freeze_overlay', False) or \
+                                    os.environ.get('NO_FREEZE_OVERLAY'):
+                                self.freeze_processor.show_stats_overlay = False
 
-                        print(f"✓ Freeze-frame initialized (threshold: {threshold})")
+                            print(f"✓ Freeze-frame initialized (threshold: {threshold})")
+                        except Exception as e:
+                            print(f"⚠️  Failed to initialize freeze processor: {e}")
+                            self.freeze_processor = None
 
                     def on_app_start(self):
                         """Called when app starts - setup freeze processor"""
                         result = super().on_app_start()
 
                         # Try to connect to face detector
-                        try:
-                            # Look for face detector in the app
-                            for backend in self._backends:
-                                if hasattr(backend, '__class__') and 'FaceDetector' in backend.__class__.__name__:
-                                    self.freeze_processor.initialize_face_detector(backend)
+                        if self.freeze_processor:
+                            try:
+                                # Look for face detector in the app with multiple strategies
+                                face_detector = None
+
+                                # Strategy 1: Check backends list
+                                if hasattr(self, '_backends'):
+                                    for backend in self._backends:
+                                        if hasattr(backend,
+                                                   '__class__') and 'FaceDetector' in backend.__class__.__name__:
+                                            face_detector = backend
+                                            break
+
+                                # Strategy 2: Check direct attributes
+                                if not face_detector:
+                                    for attr_name in ['face_detector', '_face_detector', 'detector']:
+                                        if hasattr(self, attr_name):
+                                            face_detector = getattr(self, attr_name)
+                                            break
+
+                                if face_detector:
+                                    self.freeze_processor.initialize_face_detector(face_detector)
                                     print("✓ Freeze processor connected to face detector")
-                                    break
-                        except Exception as e:
-                            print(f"⚠️  Could not connect freeze processor to detector: {e}")
+                                else:
+                                    print("⚠️  Could not find face detector for freeze processor")
+
+                            except Exception as e:
+                                print(f"⚠️  Could not connect freeze processor to detector: {e}")
 
                         return result
 
                     def _process_frame_freeze(self, frame, backend_dict):
                         """Enhanced frame processing with freeze-frame logic"""
 
+                        # Safety check for freeze processor
+                        if not self.freeze_processor:
+                            return super()._process_frame(frame, backend_dict) if hasattr(super(),
+                                                                                          '_process_frame') else frame
+
                         # Check if we have necessary components
                         face_swapper = backend_dict.get('face_swapper')
                         face_merger = backend_dict.get('face_merger')
 
                         if not face_swapper:
-                            return super()._process_frame(frame, backend_dict)
+                            return super()._process_frame(frame, backend_dict) if hasattr(super(),
+                                                                                          '_process_frame') else frame
 
                         try:
                             # Use freeze processor if available and connected
@@ -127,19 +156,22 @@ def main():
                                 )
                             else:
                                 # Fallback to original processing
-                                return super()._process_frame(frame, backend_dict)
+                                return super()._process_frame(frame, backend_dict) if hasattr(super(),
+                                                                                              '_process_frame') else frame
 
                         except Exception as e:
                             print(f"Freeze-frame processing error: {e}")
                             # Fallback to original processing
-                            return super()._process_frame(frame, backend_dict)
+                            return super()._process_frame(frame, backend_dict) if hasattr(super(),
+                                                                                          '_process_frame') else frame
 
                     def _process_frame(self, frame, backend_dict):
                         """Override frame processing to include freeze-frame"""
                         if hasattr(self, 'freeze_processor') and self.freeze_processor:
                             return self._process_frame_freeze(frame, backend_dict)
                         else:
-                            return super()._process_frame(frame, backend_dict)
+                            return super()._process_frame(frame, backend_dict) if hasattr(super(),
+                                                                                          '_process_frame') else frame
 
                 # Use the enhanced app
                 app_class = EnhancedDeepFaceLiveApp
@@ -153,8 +185,12 @@ def main():
             app_class = DeepFaceLiveApp
 
         # Create and run the app
-        app = app_class(userdata_path=userdata_path)
-        app.run()
+        try:
+            app = app_class(userdata_path=userdata_path)
+            app.run()
+        except Exception as e:
+            print(f"❌ Failed to start application: {e}")
+            print("Please check your DeepFaceLive installation and try again.")
 
     p = run_subparsers.add_parser('DeepFaceLive')
     p.add_argument('--userdata-dir', default=None, action=fixPathAction, help="Workspace directory.")
@@ -171,6 +207,7 @@ def main():
 
     p.set_defaults(func=run_DeepFaceLive)
 
+    # Rest of the original main.py code remains the same...
     dev_parser = subparsers.add_parser("dev")
     dev_subparsers = dev_parser.add_subparsers()
 
@@ -225,8 +262,8 @@ def main():
             print("🧪 Testing freeze-frame functionality...")
 
             try:
-                from .freeze_frame_modules import FreezeFrameManager
-                from .freeze_frame_modules import PerformanceMonitor
+                from freeze_frame_modules.freeze_frame_manager import FreezeFrameManager
+                from freeze_frame_modules.performance_monitor import PerformanceMonitor
                 import cv2
                 import numpy as np
                 import time
@@ -306,7 +343,7 @@ def main():
             print("⚙️  Configuring freeze-frame settings...")
 
             try:
-                from .freeze_frame_modules import FreezeFrameManager
+                from freeze_frame_modules.freeze_frame_manager import FreezeFrameManager
                 import json
 
                 config_path = Path("freeze_config.json")
