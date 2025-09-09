@@ -421,6 +421,11 @@ class fixPathAction(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
         setattr(namespace, self.dest, os.path.abspath(os.path.expanduser(values)))
 
+try:
+    from ui_integration_patch import integrate_freeze_ui_into_main
+    integrate_freeze_ui_into_main()
+except ImportError:
+    pass
 
 if __name__ == '__main__':
     main()
